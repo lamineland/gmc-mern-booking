@@ -6,7 +6,7 @@ for (const key of required) {
 }
 
 export const config = {
-  port: Number(process.env.PORT) || 5000,
+  port: Number(process.env.PORT) || 5050,
   isProd: process.env.NODE_ENV === 'production',
   mongoUri: process.env.MONGODB_URI,
   clientUrl: process.env.CLIENT_URL || 'http://localhost:5173',

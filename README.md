@@ -20,7 +20,7 @@ MongoDB, start it with `mongod --replSet rs0` and run `rs.initiate()` once in `m
 npm run install:all
 cp server/.env.example server/.env   # then fill in the values
 npm run seed                         # admin + demo data
-npm run dev                          # API on :5000, web on :5173
+npm run dev                          # API on :5050, web on :5173 (5000 is taken by AirPlay on macOS)
 ```
 
 Demo accounts created by the seed script (password `password123`): `owner@demo.test`,
