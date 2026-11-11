@@ -9,7 +9,13 @@ export const categoryLabel = (v) => CATEGORIES.find((c) => c.value === v)?.label
 
 export const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-export const formatPrice = (n) => new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(n);
+/** 20000 → "20 000 FCFA" */
+export const formatFCFA = (n) => `${new Intl.NumberFormat('fr-FR').format(n).replace(/ | /g, ' ')} FCFA`;
+
+/** 90 → "1 h 30", 30 → "30 min" */
+export const formatLength = (min) => (min < 60 ? `${min} min` : `${Math.floor(min / 60)} h${min % 60 ? ` ${min % 60}` : ''}`);
+
+export const formatPrice =(n) => new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(n);
 
 export const formatTime = (iso, timeZone) =>
   new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone });

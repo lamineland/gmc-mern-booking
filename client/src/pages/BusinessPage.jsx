@@ -46,7 +46,7 @@ export default function BusinessPage() {
     setSelected((cur) => (cur.includes(serviceId) ? cur.filter((s) => s !== serviceId) : [...cur, serviceId]));
 
   const book = async () => {
-    if (!user) return navigate('/login', { state: { from: location.pathname } });
+    if (!user) return navigate('/login', { state: { from: location.pathname, reason: 'book' } });
     setBooking(true);
     setMessage('');
     try {

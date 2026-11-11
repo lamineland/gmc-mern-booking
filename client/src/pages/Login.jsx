@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
+import { Icon } from '../components/icons.jsx';
 
-export const homeFor = (role) => ({ owner: '/owner', admin: '/admin/businesses' })[role] ?? '/';
+export const homeFor = (role) => ({ owner: '/owner/calendar', admin: '/admin/businesses' })[role] ?? '/search';
 
 export default function Login() {
   const { login } = useAuth();
@@ -11,26 +12,34 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const fromBooking = location.state?.reason === 'book';
 
   const submit = async (e) => {
     e.preventDefault();
     setError('');
     try {
       const user = await login(email, password);
-      navigate(location.state?.from ?? homeFor(user.role), { replace: true });
+      // Only players book; owners and admins go to their own area.
+      const from = user.role === 'client' ? location.state?.from : null;
+      navigate(from ?? homeFor(user.role), { replace: true });
     } catch (err) {
       setError(err.message);
     }
   };
 
   return (
-    <form className="card stack" onSubmit={submit} style={{ maxWidth: 420, margin: '0 auto' }}>
-      <h1>Log in</h1>
-      <label>Email<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></label>
-      <label>Password<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required /></label>
+    <form className="auth-card stack" onSubmit={submit}>
+      <h1>Connexion</h1>
+      {fromBooking && (
+        <p className="notice"><Icon name="lock" size={18} /> Connecte-toi pour réserver un terrain.</p>
+      )}
+      <label>E-mail<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" /></label>
+      <label>Mot de passe<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" /></label>
       {error && <p className="error">{error}</p>}
-      <button type="submit">Log in</button>
-      <p className="muted">No account? <Link to="/register">Sign up</Link></p>
+      <button type="submit" className="btn btn-primary btn-lg" style={{ width: '100%' }}>Se connecter</button>
+      <p className="muted">
+        Pas encore de compte ? <Link to="/register" state={location.state}>Créer un compte</Link>
+      </p>
     </form>
   );
 }
