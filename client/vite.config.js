@@ -6,6 +6,6 @@ export default defineConfig({
   server: {
     port: 5173,
     // Same origin in development, so the refresh-token cookie just works
-    proxy: { '/api': 'http://localhost:5000' },
+    proxy: { '/api': 'http://localhost:5050' },
   },
 });

@@ -1,86 +1,131 @@
+import { useEffect, useState } from 'react';
 import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from './auth/AuthContext.jsx';
+import Logo from './components/Logo.jsx';
+import { Icon } from './components/icons.jsx';
 import Home from './pages/Home.jsx';
-import BusinessPage from './pages/BusinessPage.jsx';
+import Search from './pages/Search.jsx';
+import VenuePage from './pages/VenuePage.jsx';
+import Checkout from './pages/Checkout.jsx';
+import PaymentStatus from './pages/PaymentStatus.jsx';
 import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
 import MyBookings from './pages/MyBookings.jsx';
-import OwnerDashboard from './pages/owner/OwnerDashboard.jsx';
-import OwnerBusinesses from './pages/owner/OwnerBusinesses.jsx';
-import OwnerBusinessEdit from './pages/owner/OwnerBusinessEdit.jsx';
+import OwnerCalendar from './pages/owner/OwnerCalendar.jsx';
+import OwnerPricing from './pages/owner/OwnerPricing.jsx';
 import AdminBusinesses from './pages/admin/AdminBusinesses.jsx';
 import AdminUsers from './pages/admin/AdminUsers.jsx';
 
 function RequireRole({ roles, children }) {
   const { user, ready } = useAuth();
   const location = useLocation();
-  if (!ready) return <p className="muted">Loading…</p>;
-  if (!user) return <Navigate to="/login" state={{ from: location.pathname }} replace />;
+  if (!ready) return <p className="muted">Chargement…</p>;
+  if (!user) return <Navigate to="/login" state={{ from: location.pathname + location.search }} replace />;
   if (!roles.includes(user.role)) return <Navigate to="/" replace />;
   return children;
 }
 
-function Nav() {
+function Header() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => { setOpen(false); }, [location.pathname]);
+
   return (
-    <header className="nav">
-      <Link to="/" className="brand">Booking</Link>
-      <nav>
-        <NavLink to="/" end>Search</NavLink>
-        {user?.role === 'client' && <NavLink to="/bookings">My bookings</NavLink>}
-        {user?.role === 'owner' && (
-          <>
-            <NavLink to="/owner" end>Dashboard</NavLink>
-            <NavLink to="/owner/businesses">My businesses</NavLink>
-          </>
-        )}
-        {user?.role === 'admin' && (
-          <>
-            <NavLink to="/admin/businesses">Businesses</NavLink>
-            <NavLink to="/admin/users">Users</NavLink>
-          </>
-        )}
-        {user ? (
-          <button
-            className="link"
-            onClick={async () => {
-              await logout();
-              navigate('/');
-            }}
-          >
-            Log out ({user.name})
-          </button>
-        ) : (
-          <>
-            <NavLink to="/login">Log in</NavLink>
-            <NavLink to="/register">Sign up</NavLink>
-          </>
-        )}
-      </nav>
+    <header className="site-header">
+      <div className="wrap header-inner">
+        <Link to="/" aria-label="WinPitch, accueil"><Logo /></Link>
+        <button className="menu-toggle" aria-label="Menu" aria-expanded={open} onClick={() => setOpen(!open)}>
+          <Icon name={open ? 'close' : 'menu'} size={24} />
+        </button>
+        <nav className={`site-nav ${open ? 'open' : ''}`}>
+          <NavLink to="/search">Trouver un terrain</NavLink>
+          {user?.role === 'client' && <NavLink to="/bookings">Mes réservations</NavLink>}
+          {user?.role === 'owner' && (
+            <>
+              <NavLink to="/owner/calendar">Calendrier</NavLink>
+              <NavLink to="/owner/pricing">Tarifs</NavLink>
+            </>
+          )}
+          {user?.role === 'admin' && (
+            <>
+              <NavLink to="/admin/businesses">Complexes</NavLink>
+              <NavLink to="/admin/users">Utilisateurs</NavLink>
+            </>
+          )}
+          {!user && <NavLink to="/register" state={{ role: 'owner' }}>Propriétaires</NavLink>}
+          <span className="nav-sep" />
+          {user ? (
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={async () => {
+                await logout();
+                navigate('/');
+              }}
+            >
+              Déconnexion · {user.name.split(' ')[0]}
+            </button>
+          ) : (
+            <>
+              <NavLink to="/login" className="nav-login">Connexion</NavLink>
+              <Link to="/register" className="btn btn-primary btn-sm">S’inscrire</Link>
+            </>
+          )}
+        </nav>
+      </div>
     </header>
   );
 }
 
-export default function App() {
+function Footer() {
   return (
-    <>
-      <Nav />
-      <main className="container">
+    <footer className="site-footer">
+      <div className="wrap footer-inner">
+        <div>
+          <Logo variant="light" size={32} />
+          <p>Réserve ton terrain de foot ou de basket en 1 minute.</p>
+        </div>
+        <nav>
+          <Link to="/search">Trouver un terrain</Link>
+          <Link to="/register" state={{ role: 'owner' }}>Inscrire mon complexe</Link>
+          <Link to="/login">Connexion</Link>
+        </nav>
+        <p className="footer-meta">© {new Date().getFullYear()} WinPitch · Dakar, Sénégal</p>
+      </div>
+    </footer>
+  );
+}
+
+export default function App() {
+  const { pathname } = useLocation();
+  const isLanding = pathname === '/';
+
+  useEffect(() => { window.scrollTo(0, 0); }, [pathname]);
+
+  return (
+    <div className="app">
+      <Header />
+      <main className={isLanding ? '' : 'container'}>
         <Routes>
           <Route path="/" element={<Home />} />
-          <Route path="/businesses/:id" element={<BusinessPage />} />
+          <Route path="/search" element={<Search />} />
+          <Route path="/venues/:id" element={<VenuePage />} />
+          <Route path="/checkout" element={<RequireRole roles={['client']}><Checkout /></RequireRole>} />
+          <Route path="/payment/:ref" element={<RequireRole roles={['client']}><PaymentStatus /></RequireRole>} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/bookings" element={<RequireRole roles={['client']}><MyBookings /></RequireRole>} />
-          <Route path="/owner" element={<RequireRole roles={['owner']}><OwnerDashboard /></RequireRole>} />
-          <Route path="/owner/businesses" element={<RequireRole roles={['owner']}><OwnerBusinesses /></RequireRole>} />
-          <Route path="/owner/businesses/:id" element={<RequireRole roles={['owner']}><OwnerBusinessEdit /></RequireRole>} />
+          <Route path="/owner" element={<Navigate to="/owner/calendar" replace />} />
+          <Route path="/owner/calendar" element={<RequireRole roles={['owner']}><OwnerCalendar /></RequireRole>} />
+          <Route path="/owner/pricing" element={<RequireRole roles={['owner']}><OwnerPricing /></RequireRole>} />
           <Route path="/admin/businesses" element={<RequireRole roles={['admin']}><AdminBusinesses /></RequireRole>} />
           <Route path="/admin/users" element={<RequireRole roles={['admin']}><AdminUsers /></RequireRole>} />
-          <Route path="*" element={<p>Page not found.</p>} />
+          <Route path="*" element={<p>Page introuvable.</p>} />
         </Routes>
       </main>
-    </>
+      <Footer />
+    </div>
   );
 }

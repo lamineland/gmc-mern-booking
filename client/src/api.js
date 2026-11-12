@@ -17,26 +17,34 @@ export async function refreshSession() {
   return data.user;
 }
 
-export async function api(path, { method = 'GET', body, retry = true } = {}) {
+export async function api(path, { method = 'GET', body, headers: extra = {}, retry = true } = {}) {
   const isForm = body instanceof FormData;
-  const headers = {};
+  const headers = { ...extra };
   if (body && !isForm) headers['Content-Type'] = 'application/json';
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
 
-  const res = await fetch(`/api/v1${path}`, {
-    method,
-    headers,
-    credentials: 'include',
-    body: body === undefined ? undefined : isForm ? body : JSON.stringify(body),
-  });
+  let res;
+  try {
+    res = await fetch(`/api/v1${path}`, {
+      method,
+      headers,
+      credentials: 'include',
+      body: body === undefined ? undefined : isForm ? body : JSON.stringify(body),
+    });
+  } catch {
+    // fetch only rejects when the server can't be reached; its own message is the browser's, in English.
+    const err = new Error('Connexion impossible. Vérifie ta connexion internet et réessaie.');
+    err.code = 'NETWORK_ERROR';
+    throw err;
+  }
 
   if (res.status === 401 && retry && !path.startsWith('/auth/') && (await refreshSession())) {
-    return api(path, { method, body, retry: false });
+    return api(path, { method, body, headers: extra, retry: false });
   }
 
   const data = res.status === 204 ? null : await res.json().catch(() => null);
   if (!res.ok) {
-    const err = new Error(data?.error?.message || `Request failed (${res.status})`);
+    const err = new Error(data?.error?.message || `Le serveur ne répond pas correctement (erreur ${res.status}). Réessaie dans un instant.`);
     err.status = res.status;
     err.code = data?.error?.code;
     throw err;

@@ -1,6 +1,7 @@
-# Booking App (MERN)
+# WinPitch (MERN)
 
-Book salons, football pitches, gyms and more. Requirements: [docs/PRD.md](docs/PRD.md).
+Book football pitches, basketball courts, futsal and padel by 30-minute slots in Senegal, and pay
+with Wave, Orange Money or Free Money. Requirements: [docs/PRD.md](docs/PRD.md) (v2.2).
 
 ```
 booking-app/
@@ -19,27 +20,44 @@ MongoDB, start it with `mongod --replSet rs0` and run `rs.initiate()` once in `m
 ```bash
 npm run install:all
 cp server/.env.example server/.env   # then fill in the values
-npm run seed                         # admin + demo data
-npm run dev                          # API on :5000, web on :5173
+npm run seed                         # admin + Dakar demo data (only if the database has no venues)
+npm run dev                          # API on :5050, web on :5173 (5000 is taken by AirPlay on macOS)
 ```
 
-Demo accounts created by the seed script (password `password123`): `owner@demo.test`,
-`client@demo.test`. The admin account comes from `ADMIN_EMAIL` / `ADMIN_PASSWORD` in
-`server/.env`.
+`npm run seed:reset --prefix server` wipes the WinPitch collections and seeds again (refused in production).
+`npm test --prefix server` runs the unit tests of the pricing, size, slot and commission rules.
+
+Demo accounts created by the seed script (password `password123`): `owner@demo.test` (phone
+77 000 00 01, runs Almadies Five, Ouakam Sports Center and Sacré-Cœur Arena) and `client@demo.test`
+(77 000 00 02). Players log in with their phone number or email. The admin account comes from
+`ADMIN_EMAIL` / `ADMIN_PASSWORD` in `server/.env`.
+
+### Test payments
+
+`PAYMENT_PROVIDER=mock` simulates a mobile money provider (hosted page, signed webhooks, refunds).
+The paying phone number decides what happens: ending in **00** pays after 3 s, **01** is refused,
+**02** never answers (the hold expires after 10 min). Any other number waits for the buttons on the
+test page (`/api/v1/mock-pay/:ref`). Refunds of an amount ending in 13 FCFA fail, to test retries.
 
 ## How it fits together
 
 | Area | Where |
 |---|---|
-| Slot calculation & selection checks | `server/src/services/availability.js` |
-| Booking creation (transaction + resource lock) | `server/src/routes/bookings.js` |
-| Emails (console output until a provider is chosen) | `server/src/services/notifier.js` |
+| Pricing, sizes, slots, commission (pure, unit-tested) | `server/src/domain/` |
+| Availability from the database (bookings, holds, blocks) | `server/src/services/availability.js` |
+| Booking creation (transaction + area lock) | `server/src/services/bookings.js` |
+| Payments: adapter, mock driver, webhooks, refunds, ledger, hold expiry job | `server/src/services/payments/` |
+| Public, player, owner, admin routes | `server/src/routes/` |
+| Messages (console output until providers are chosen) | `server/src/services/notifier.js` |
 | Image storage (MongoDB for now) | `server/src/services/storage.js` |
-| Auth (JWT access token + httpOnly refresh cookie) | `server/src/routes/auth.js` |
+| Auth (JWT access token + httpOnly refresh cookie, phone or email login) | `server/src/routes/auth.js` |
 
 ## Not done yet
 
-- Automated tests (slot calculation and booking rules first)
+- Owner venue setup screens (create a venue, add areas, opening hours, photos): the API exists
+  (`/owner/venues`, `/owner/venues/:id/areas`), the screens don't yet
+- Owner balance screen and the redesigned admin screens (commission, payments, payouts); the
+  admin pages still use the old design
+- Real payment provider (PayDunya, PayTech or Wave), email and SMS/WhatsApp providers
+- Recurring bookings, linked areas UI, map search, OTP and password reset
 - Image resizing on upload (only the 2 MB limit is enforced)
-- Owner time blocks, holiday exceptions UI (the API accepts `exceptions`), password reset
-- Email provider and hosting (still to be chosen, see PRD §11)

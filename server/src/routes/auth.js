@@ -8,6 +8,8 @@ import { User } from '../models/User.js';
 import { authenticate } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { AppError } from '../utils/AppError.js';
+import { normalizeSenegalPhone } from '../utils/phone.js';
+import { senegalPhone } from '../utils/schemas.js';
 
 const router = Router();
 router.use(rateLimit({ windowMs: 15 * 60 * 1000, limit: 100, standardHeaders: 'draft-7', legacyHeaders: false }));
@@ -32,28 +34,35 @@ function startSession(res, user) {
 
 const registerSchema = z.object({
   name: z.string().trim().min(2).max(80),
-  email: z.string().trim().toLowerCase().email(),
+  phone: senegalPhone,
+  email: z.string().trim().toLowerCase().email().optional().or(z.literal('').transform(() => undefined)),
   password: z.string().min(8).max(100),
-  phone: z.string().trim().max(30).optional(),
   role: z.enum(['client', 'owner']),
 });
 
 router.post('/register', validate(registerSchema), async (req, res) => {
   const { password, ...data } = req.valid.body;
-  if (await User.exists({ email: data.email })) throw new AppError(409, 'EMAIL_TAKEN', 'An account with this email already exists');
+  if (await User.exists({ phone: data.phone })) throw new AppError(409, 'PHONE_TAKEN', 'Un compte existe déjà avec ce numéro');
+  if (data.email && (await User.exists({ email: data.email }))) throw new AppError(409, 'EMAIL_TAKEN', 'Un compte existe déjà avec cet e-mail');
   const user = await User.create({ ...data, passwordHash: await bcrypt.hash(password, 12) });
   res.status(201).json(startSession(res, user));
 });
 
-const loginSchema = z.object({ email: z.string().trim().toLowerCase().email(), password: z.string().min(1) });
+// Log in with a phone number or an email (PRD FR-A2). `email` is still accepted for older clients.
+const loginSchema = z
+  .object({ identifier: z.string().trim().min(3).optional(), email: z.string().trim().optional(), password: z.string().min(1) })
+  .refine((b) => b.identifier || b.email, { message: 'Téléphone ou e-mail requis' });
 
 router.post('/login', validate(loginSchema), async (req, res) => {
-  const { email, password } = req.valid.body;
-  const user = await User.findOne({ email }).select('+passwordHash +tokenVersion');
+  const { password } = req.valid.body;
+  const id = req.valid.body.identifier ?? req.valid.body.email;
+  const phone = normalizeSenegalPhone(id);
+  const query = id.includes('@') ? { email: id.toLowerCase() } : phone ? { phone } : null;
+  const user = query && (await User.findOne(query).select('+passwordHash +tokenVersion'));
   if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
-    throw new AppError(401, 'INVALID_CREDENTIALS', 'Wrong email or password');
+    throw new AppError(401, 'INVALID_CREDENTIALS', 'Identifiant ou mot de passe incorrect');
   }
-  if (user.status !== 'active') throw new AppError(403, 'ACCOUNT_SUSPENDED', 'This account is suspended');
+  if (user.status !== 'active') throw new AppError(403, 'ACCOUNT_SUSPENDED', 'Ce compte est suspendu');
   res.json(startSession(res, user));
 });
 
