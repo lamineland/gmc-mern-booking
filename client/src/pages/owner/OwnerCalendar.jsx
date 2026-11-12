@@ -413,12 +413,17 @@ export default function OwnerCalendar() {
                   {mine.map((e) => {
                     const tag = STATUS_TAG(e);
                     const h = (e.endMin - e.startMin) / 30 * ROW_H;
+                    const title = e.kind === 'block' ? e.reason : e.clientName;
+                    // Short bars hide the tag to save space, except "Absent", which the strike-through alone doesn't say.
+                    const showTag = e.kind === 'booking' && (h >= 40 || tag.cls === 'noshow');
                     return (
                       <button key={e.id} className={`cal-event ev-${tag.cls} ${e.past ? 'is-past' : ''} ${h < 40 ? 'short' : ''}`}
                         style={{ top: (e.startMin - dayStart) / 30 * ROW_H + 1, height: h - 2 }}
+                        title={e.kind === 'booking' ? `${title} · ${e.time} · ${tag.label}` : `${title} · ${e.time}`}
+                        aria-label={e.kind === 'booking' ? `${title}, ${e.time}, ${tag.label}` : `${title}, ${e.time}`}
                         onClick={() => setSheet({ type: 'event', event: e })}>
-                        <strong>{e.kind === 'block' ? e.reason : e.clientName}</strong>
-                        <span>{e.time}{e.kind === 'booking' && h >= 40 && ` · ${tag.label}`}</span>
+                        <strong>{title}</strong>
+                        <span>{e.time}{showTag && ` · ${tag.label}`}</span>
                         {e.kind === 'booking' && e.atVenue > 0 && h >= 58 && <span className="ev-due">À encaisser {formatFCFA(e.atVenue)}</span>}
                       </button>
                     );

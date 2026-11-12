@@ -80,6 +80,7 @@ function NextMatch({ p, now, onCancel }) {
           <a className="btn btn-outline-light btn-sm" href={shareHref(p, d)} target="_blank" rel="noreferrer">Partager sur WhatsApp</a>
           {p.cancellable && <button className="btn btn-outline-light btn-sm" onClick={() => onCancel(p)}>Annuler</button>}
         </div>
+        {!p.cancellable && <p className="no-cancel on-dark">Annulation impossible à moins de {META.cancellationCutoffHours} h du début</p>}
       </div>
     </section>
   );
@@ -158,15 +159,39 @@ function CancelDialog({ p, busy, error, onClose, onConfirm }) {
 
 export default function MyBookings() {
   const [tab, setTab] = useState('upcoming');
-  const [data, setData] = useState(null);
+  // Loaded pages per tab: { items, page, hasMore }. A tab is fetched the first time it is opened.
+  const [lists, setLists] = useState({});
+  const [counts, setCounts] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(null); // { tab, page, message } of the request to retry
   const [toCancel, setToCancel] = useState(null);
   const [busy, setBusy] = useState(false);
   const [dialogError, setDialogError] = useState('');
   const [flash, setFlash] = useState('');
   const now = Date.now();
 
-  const load = () => listMyBookings().then(setData);
-  useEffect(() => { load(); }, []);
+  const fetchPage = async (t, page) => {
+    setLoading(true);
+    setFailed(null);
+    try {
+      const res = await listMyBookings(t, page);
+      setCounts(res.counts);
+      setLists((prev) => {
+        const before = page > 1 ? prev[t]?.items ?? [] : [];
+        // Offset pages can overlap if a booking moved tab in between: keep each booking once.
+        const seen = new Set(before.map((p) => p.ref));
+        return { ...prev, [t]: { items: [...before, ...res.items.filter((p) => !seen.has(p.ref))], page: res.page, hasMore: res.hasMore } };
+      });
+    } catch (e) {
+      setFailed({ tab: t, page, message: e.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!lists[tab]) fetchPage(tab, 1);
+  }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const confirmCancel = async () => {
     setBusy(true);
@@ -175,7 +200,8 @@ export default function MyBookings() {
       const { refund, method } = await cancelBooking(toCancel.ref);
       setFlash(`Réservation ${toCancel.code} annulée. ${formatFCFA(refund.amount)} remboursés sur ton compte ${WALLETS[method].label}.`);
       setToCancel(null);
-      load();
+      setLists({});
+      fetchPage(tab, 1);
     } catch (e) {
       setDialogError(e.message);
     } finally {
@@ -183,9 +209,11 @@ export default function MyBookings() {
     }
   };
 
-  const list = data?.[tab] ?? [];
-  const next = data?.upcoming.find((p) => p.status === 'confirmed');
+  const current = lists[tab];
+  const list = current?.items ?? [];
+  const next = lists.upcoming?.items.find((p) => p.status === 'confirmed');
   const rows = tab === 'upcoming' ? list.filter((p) => p !== next) : list;
+  const error = failed?.tab === tab ? failed : null;
 
   return (
     <div className="bookings-page">
@@ -205,16 +233,16 @@ export default function MyBookings() {
         {TABS.map((t) => (
           <button key={t.value} role="tab" aria-selected={tab === t.value} className={tab === t.value ? 'on' : ''} onClick={() => setTab(t.value)}>
             {t.label}
-            {data && <span className="count">{data[t.value].length}</span>}
+            {counts && <span className="count">{counts[t.value]}</span>}
           </button>
         ))}
       </div>
 
-      {!data && <div className="venue-skeleton" style={{ height: 240 }} />}
+      {!current && !error && <div className="venue-skeleton" style={{ height: 240 }} />}
 
-      {data && tab === 'upcoming' && next && <NextMatch p={next} now={now} onCancel={setToCancel} />}
+      {current && tab === 'upcoming' && next && <NextMatch p={next} now={now} onCancel={setToCancel} />}
 
-      {data && list.length === 0 && (
+      {current && list.length === 0 && (
         <div className="empty">
           <Icon name={tab === 'cancelled' ? 'check' : 'calendar'} size={28} />
           <h3>{tab === 'upcoming' ? 'Aucun match prévu' : tab === 'past' ? 'Pas encore de match joué' : 'Aucune annulation'}</h3>
@@ -227,6 +255,26 @@ export default function MyBookings() {
         <div className="booking-list">
           {tab === 'upcoming' && next && <h2 className="list-title">Ensuite</h2>}
           {rows.map((p) => <BookingRow key={p.ref} p={p} now={now} onCancel={setToCancel} />)}
+        </div>
+      )}
+
+      {current?.hasMore && !error && (
+        <div className="load-more">
+          <span className="muted">{list.length} sur {counts?.[tab] ?? list.length}</span>
+          <button className="btn btn-ghost" onClick={() => fetchPage(tab, current.page + 1)} disabled={loading}>
+            {loading ? 'Chargement…' : 'Charger plus'}
+          </button>
+        </div>
+      )}
+
+      {error && (
+        <div className="empty load-error" role="alert">
+          <Icon name="close" size={28} />
+          <h3>Impossible de charger tes réservations</h3>
+          <p className="muted">{error.message || 'Vérifie ta connexion internet.'}</p>
+          <button className="btn btn-primary" onClick={() => fetchPage(error.tab, error.page)} disabled={loading}>
+            {loading ? 'Chargement…' : 'Réessayer'}
+          </button>
         </div>
       )}
 

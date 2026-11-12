@@ -657,6 +657,10 @@ th, td { text-align: left; padding: 0.6rem; border-bottom: 1px solid var(--borde
 .status-pill.ko { background: #fbe5e4; color: var(--danger); }
 .booking-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 0.4rem; }
 .no-cancel { font-size: 0.78rem; color: var(--muted); max-width: 160px; text-align: right; }
+.no-cancel.on-dark { color: rgba(255, 255, 255, 0.72); max-width: none; text-align: left; margin: 0.75rem 0 0; }
+.load-more { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; margin: 1.5rem 0 0; font-size: 0.85rem; }
+.load-error { margin-top: 1rem; }
+.load-error svg { color: var(--danger); }
 
 .btn-danger { background: var(--danger); color: #fff; border-color: var(--danger); }
 .sheet { width: min(460px, calc(100vw - 32px)); border: 2px solid var(--ink); border-radius: var(--radius-lg); padding: 1.5rem; box-shadow: 8px 8px 0 var(--ink); }

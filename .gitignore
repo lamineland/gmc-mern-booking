@@ -3,3 +3,6 @@ dist/
 .env
 .DS_Store
 *.log
+
+# QA run output (report + screenshots), kept local
+docs/qa/

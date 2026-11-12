@@ -114,15 +114,21 @@ export async function retry(ref, { method, phone }) {
   return { redirectUrl: res.redirectUrl };
 }
 
-/** GET /bookings/me for the three tabs at once. */
-export async function listMyBookings() {
-  const tabs = ['upcoming', 'past', 'cancelled'];
-  const res = await Promise.all(tabs.map((t) => api(`/bookings/me?tab=${t}`)));
-  META.cancellationCutoffHours = res[0].cancellationCutoffHours;
-  return Object.fromEntries(tabs.map((t, i) => [t, res[i].bookings.map((b) => {
-    const v = view(b);
-    return { ...v, status: v.listStatus };
-  })]));
+export const PAGE_SIZE = 20;
+
+/** GET /bookings/me: one page of one tab, plus the true totals of every tab (for the badges). */
+export async function listMyBookings(tab, page = 1) {
+  const res = await api(`/bookings/me?tab=${tab}&page=${page}&limit=${PAGE_SIZE}`);
+  META.cancellationCutoffHours = res.cancellationCutoffHours;
+  return {
+    items: res.bookings.map((b) => {
+      const v = view(b);
+      return { ...v, status: v.listStatus };
+    }),
+    counts: res.counts,
+    page: res.page,
+    hasMore: res.hasMore,
+  };
 }
 
 export async function cancelBooking(ref) {

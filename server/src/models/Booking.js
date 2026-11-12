@@ -50,6 +50,8 @@ bookingSchema.virtual('displayStatus').get(function displayStatus() {
 bookingSchema.index({ areaId: 1, startAt: 1 });
 bookingSchema.index({ venueId: 1, startAt: 1 });
 bookingSchema.index({ clientId: 1, startAt: -1 });
+// "Mes réservations" tabs filter on status, then sort by startAt.
+bookingSchema.index({ clientId: 1, status: 1, startAt: -1 });
 bookingSchema.index({ status: 1, holdExpiresAt: 1 });
 bookingSchema.index({ clientId: 1, idempotencyKey: 1 }, { unique: true, partialFilterExpression: { idempotencyKey: { $type: 'string' } } });
 

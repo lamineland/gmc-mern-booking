@@ -20,20 +20,28 @@ router.use(authenticate, requireRole('client'));
 
 const VENUE_FIELDS = 'name address district city phone timezone';
 
-/** What the player sees of a booking: no commission, plus its latest payment. */
-async function playerView(booking) {
-  const b = booking.toJSON();
-  delete b.commission;
-  delete b.commissionRate;
-  delete b.ownerNet;
-  delete b.idempotencyKey;
-  const payments = await Payment.find({ bookingId: booking._id }).sort({ createdAt: -1 }).select('kind method phone amount status failureReason redirectUrl createdAt').lean();
-  return {
-    ...b,
-    payment: payments.find((p) => p.kind === 'charge') ?? null,
-    refund: payments.find((p) => p.kind === 'refund') ?? null,
-  };
+const PAYMENT_FIELDS = 'bookingId kind method phone amount status failureReason redirectUrl createdAt';
+
+/** What the player sees of bookings: no commission, plus each one's latest charge and refund. One payment query for the whole list. */
+async function playerViews(bookings) {
+  const payments = await Payment.find({ bookingId: { $in: bookings.map((b) => b._id) } })
+    .sort({ createdAt: -1 }).select(PAYMENT_FIELDS).lean();
+  return bookings.map((booking) => {
+    const b = booking.toJSON();
+    delete b.commission;
+    delete b.commissionRate;
+    delete b.ownerNet;
+    delete b.idempotencyKey;
+    const mine = payments.filter((p) => p.bookingId.equals(booking._id));
+    return {
+      ...b,
+      payment: mine.find((p) => p.kind === 'charge') ?? null,
+      refund: mine.find((p) => p.kind === 'refund') ?? null,
+    };
+  });
 }
+
+const playerView = async (booking) => (await playerViews([booking]))[0];
 
 const createSchema = z.object({
   areaId: objectId,
@@ -73,33 +81,38 @@ router.post('/:id/pay', validate(z.object({ method: wallet, phone: senegalPhone 
   res.status(201).json({ booking: await playerView(booking), redirectUrl: pay.redirectUrl, instructions: pay.instructions });
 });
 
-const listSchema = z.object({ tab: z.enum(['upcoming', 'past', 'cancelled']).default('upcoming') });
+const listSchema = z.object({
+  tab: z.enum(['upcoming', 'past', 'cancelled']).default('upcoming'),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+});
 
+/** Which bookings each "Mes réservations" tab shows. */
+function tabFilter(tab, now) {
+  if (tab === 'upcoming') return [{ status: 'confirmed', endAt: { $gte: now } }, { status: 'pending_payment', holdExpiresAt: { $gt: now } }];
+  if (tab === 'past') return [{ status: 'confirmed', endAt: { $lt: now } }, { status: 'no_show' }];
+  return [{ status: { $in: ['cancelled_by_client', 'cancelled_by_owner'] } }];
+}
+
+/** One page of a tab. Upcoming is soonest first, past and cancelled most recent first. `counts` holds every tab's total. */
 router.get('/me', validate(listSchema, 'query'), async (req, res) => {
-  const { tab } = req.valid.query;
+  const { tab, page, limit } = req.valid.query;
   const now = new Date();
-  const filter = { clientId: req.user._id };
-  let sort = { startAt: 1 };
-  if (tab === 'upcoming') {
-    filter.$or = [{ status: 'confirmed', endAt: { $gte: now } }, { status: 'pending_payment', holdExpiresAt: { $gt: now } }];
-  } else {
-    sort = { startAt: -1 };
-    filter.$or = tab === 'past'
-      ? [{ status: 'confirmed', endAt: { $lt: now } }, { status: 'no_show' }]
-      : [{ status: { $in: ['cancelled_by_client', 'cancelled_by_owner'] } }];
-  }
-  const [bookings, settings, counts] = await Promise.all([
-    Booking.find(filter).sort(sort).limit(100).populate('venueId', VENUE_FIELDS),
+  const clientId = req.user._id;
+  const sort = tab === 'upcoming' ? { startAt: 1, _id: 1 } : { startAt: -1, _id: -1 };
+  const tabs = ['upcoming', 'past', 'cancelled'];
+  const [bookings, settings, totals] = await Promise.all([
+    Booking.find({ clientId, $or: tabFilter(tab, now) }).sort(sort).skip((page - 1) * limit).limit(limit).populate('venueId', VENUE_FIELDS),
     getSettings(),
-    Promise.all([
-      Booking.countDocuments({ clientId: req.user._id, $or: [{ status: 'confirmed', endAt: { $gte: now } }, { status: 'pending_payment', holdExpiresAt: { $gt: now } }] }),
-      Booking.countDocuments({ clientId: req.user._id, $or: [{ status: 'confirmed', endAt: { $lt: now } }, { status: 'no_show' }] }),
-      Booking.countDocuments({ clientId: req.user._id, status: { $in: ['cancelled_by_client', 'cancelled_by_owner'] } }),
-    ]),
+    Promise.all(tabs.map((t) => Booking.countDocuments({ clientId, $or: tabFilter(t, now) }))),
   ]);
+  const counts = Object.fromEntries(tabs.map((t, i) => [t, totals[i]]));
   res.json({
-    bookings: await Promise.all(bookings.map(playerView)),
-    counts: { upcoming: counts[0], past: counts[1], cancelled: counts[2] },
+    bookings: await playerViews(bookings),
+    counts,
+    page,
+    limit,
+    hasMore: page * limit < counts[tab],
     cancellationCutoffHours: settings.cancellationCutoffHours,
   });
 });
