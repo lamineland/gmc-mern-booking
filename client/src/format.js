@@ -1,12 +1,3 @@
-export const CATEGORIES = [
-  { value: 'salon', label: 'Salon' },
-  { value: 'football', label: 'Football pitch' },
-  { value: 'gym', label: 'Gym' },
-  { value: 'other', label: 'Other' },
-];
-
-export const categoryLabel = (v) => CATEGORIES.find((c) => c.value === v)?.label ?? v;
-
 export const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 /** 20000 → "20 000 FCFA" */

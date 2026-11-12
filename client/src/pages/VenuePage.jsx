@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'reac
 import { useAuth } from '../auth/AuthContext.jsx';
 import SportCover from '../components/SportCover.jsx';
 import { Icon } from '../components/icons.jsx';
-import { AMENITIES, SIZES, SPORTS, areaDay, dimsLabel, fetchVenue, fmtMin, isoOf, nextDays, pricingOf, runIsFree, sizeOf, toMin, venueSports, weekdayOf } from '../data/venues.js';
+import { AMENITIES, SIZES, SPORTS, dimsLabel, fetchAreaDay, fetchVenue, fmtMin, isoOf, nextDays, pricingOf, runIsFree, sizeOf, toMin, venueSports, weekdayOf } from '../data/venues.js';
 import { formatFCFA, formatLength } from '../format.js';
 
 const hoursLabel = (venue, iso) => {
@@ -65,7 +65,26 @@ export default function VenuePage() {
 
   const date = params.get('date') ?? isoOf(new Date());
   const area = venue?.areas.find((a) => a.id === params.get('area')) ?? venue?.areas[0];
-  const slots = useMemo(() => (venue && area ? areaDay(venue, area, date) : []), [venue, area, date]);
+  const [slots, setSlots] = useState([]);
+  const [slotsLoading, setSlotsLoading] = useState(true);
+  const [reloadKey, setReloadKey] = useState(0);
+  useEffect(() => {
+    if (!area) return undefined;
+    let live = true;
+    setSlotsLoading(true);
+    fetchAreaDay(area.id, date)
+      .then((s) => live && setSlots(s))
+      .catch((e) => live && (setSlots([]), setHint(e.message)))
+      .finally(() => live && setSlotsLoading(false));
+    return () => { live = false; };
+  }, [area?.id, date, reloadKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Others book too: refresh the grid every 30 s and when the player comes back to the tab.
+  useEffect(() => {
+    const again = () => setReloadKey((k) => k + 1);
+    const t = setInterval(again, 30000);
+    window.addEventListener('focus', again);
+    return () => { clearInterval(t); window.removeEventListener('focus', again); };
+  }, []);
   const visible = slots.filter((s) => s.state !== 'past');
 
   const startIdx = slots.findIndex((s) => s.time === params.get('start'));
@@ -216,7 +235,9 @@ export default function VenuePage() {
             <span><i className="lg picked" /> Ta sélection</span>
           </div>
 
-          {visible.length === 0 ? (
+          {slotsLoading && slots.length === 0 ? (
+            <div className="venue-skeleton" style={{ height: 220 }} />
+          ) : visible.length === 0 ? (
             <div className="empty small"><p>Plus aucun créneau ce jour-là. Choisis une autre date.</p></div>
           ) : (
             <div className="slot-grid">

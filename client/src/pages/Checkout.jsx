@@ -3,8 +3,8 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
 import SportCover from '../components/SportCover.jsx';
 import { Icon } from '../components/icons.jsx';
-import { HOLD_MINUTES, WALLETS, createBookingAndPay, quote } from '../data/payments.js';
-import { nextDays, sizeOf } from '../data/venues.js';
+import { WALLETS, createBookingAndPay, isMockRedirect, quote } from '../data/payments.js';
+import { META, longDate, sizeOf } from '../data/venues.js';
 import { formatFCFA, formatLength } from '../format.js';
 
 export function WalletLogo({ method, size = 44 }) {
@@ -67,8 +67,10 @@ export default function Checkout() {
     setPhoneError('');
     setPaying(true);
     try {
-      const { ref } = await createBookingAndPay({ ...selection, method, phone: normalised, note, clientName: user?.name });
-      navigate(`/payment/${ref}`, { replace: true });
+      const { ref, redirectUrl } = await createBookingAndPay({ ...selection, method, phone: normalised, note });
+      // A real provider hosts its own payment page and sends the player back to /payment/:ref.
+      if (redirectUrl && !isMockRedirect(redirectUrl)) window.location.assign(redirectUrl);
+      else navigate(`/payment/${ref}`, { replace: true });
     } catch (err) {
       setError(err);
       setPaying(false);
@@ -89,7 +91,7 @@ export default function Checkout() {
   }
   if (!q) return <div className="venue-skeleton" />;
 
-  const day = nextDays(14).find((d) => d.iso === q.date)?.long ?? q.date;
+  const day = longDate(q.date);
   const size = sizeOf(q.area);
   const deposit = q.venue.paymentMode === 'deposit';
 
@@ -148,7 +150,7 @@ export default function Checkout() {
               {paying ? 'Création du paiement…' : <><Icon name="lock" size={18} /> Payer {formatFCFA(q.payNow)} avec {WALLETS[method].label}</>}
             </button>
             <ul className="pay-notes">
-              <li><Icon name="clock" size={16} /> Le créneau est bloqué pour toi pendant {HOLD_MINUTES} minutes le temps de payer.</li>
+              <li><Icon name="clock" size={16} /> Le créneau est bloqué pour toi pendant {META.holdMinutes} minutes le temps de payer.</li>
               <li><Icon name="check" size={16} /> Annulation gratuite jusqu’à 2 h avant le début, remboursement complet sur ton compte {WALLETS[method].label}.</li>
             </ul>
           </div>

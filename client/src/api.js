@@ -17,9 +17,9 @@ export async function refreshSession() {
   return data.user;
 }
 
-export async function api(path, { method = 'GET', body, retry = true } = {}) {
+export async function api(path, { method = 'GET', body, headers: extra = {}, retry = true } = {}) {
   const isForm = body instanceof FormData;
-  const headers = {};
+  const headers = { ...extra };
   if (body && !isForm) headers['Content-Type'] = 'application/json';
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
 
@@ -31,7 +31,7 @@ export async function api(path, { method = 'GET', body, retry = true } = {}) {
   });
 
   if (res.status === 401 && retry && !path.startsWith('/auth/') && (await refreshSession())) {
-    return api(path, { method, body, retry: false });
+    return api(path, { method, body, headers: extra, retry: false });
   }
 
   const data = res.status === 204 ? null : await res.json().catch(() => null);

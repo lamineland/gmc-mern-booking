@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import SportCover from '../components/SportCover.jsx';
 import { Icon } from '../components/icons.jsx';
-import { AMENITIES, CITIES, SIZES, SPORTS, districtsOf, fetchVenues, fmtMin, isoOf, nextDays, sizeOf } from '../data/venues.js';
+import { AMENITIES, CITIES, SIZES, SPORTS, fetchDistricts, fetchVenues, fmtMin, isoOf, nextDays, sizeOf } from '../data/venues.js';
 import { formatFCFA, formatLength } from '../format.js';
 
 const TIMES = Array.from({ length: 30 }, (_, i) => fmtMin(8 * 60 + i * 30)); // 08:00 … 22:30
@@ -67,6 +67,9 @@ export default function Search() {
     duration: Number(params.get('duration')) || 0,
   };
   const [items, setItems] = useState(null);
+  const [error, setError] = useState('');
+  const [districts, setDistricts] = useState([]);
+  useEffect(() => { fetchDistricts().then(setDistricts).catch(() => {}); }, []);
   const [sort, setSort] = useState('recommended');
 
   const update = (patch) => {
@@ -80,7 +83,8 @@ export default function Search() {
   useEffect(() => {
     let live = true;
     setItems(null);
-    fetchVenues(filters).then((r) => live && setItems(r));
+    setError('');
+    fetchVenues(filters).then((r) => live && setItems(r)).catch((e) => live && (setError(e.message), setItems([])));
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params]);
@@ -113,7 +117,7 @@ export default function Search() {
           <label className="pill-select">
             <select value={filters.district} onChange={(e) => update({ district: e.target.value })} aria-label="Quartier">
               <option value="">Tous les quartiers</option>
-              {districtsOf(filters.city).map((d) => <option key={d}>{d}</option>)}
+              {districts.filter((d) => d.city === filters.city && d.district).map((d) => <option key={d.district}>{d.district}</option>)}
             </select>
           </label>
           {filters.sport && SIZES[filters.sport].length > 1 && (
@@ -174,6 +178,7 @@ export default function Search() {
         </label>
       </div>
 
+      {error && <p className="field-error">{error}</p>}
       {sorted === null && (
         <div className="venue-grid">{[0, 1, 2].map((i) => <div key={i} className="venue-card skeleton" />)}</div>
       )}

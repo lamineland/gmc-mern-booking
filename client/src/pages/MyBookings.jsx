@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import SportCover from '../components/SportCover.jsx';
 import { Icon } from '../components/icons.jsx';
-import { CANCELLATION_CUTOFF_HOURS, WALLETS, cancelBooking, listMyBookings } from '../data/payments.js';
+import { WALLETS, cancelBooking, listMyBookings } from '../data/payments.js';
+import { META } from '../data/venues.js';
 import { formatFCFA } from '../format.js';
 import { WalletLogo } from './Checkout.jsx';
 
@@ -114,7 +115,7 @@ function BookingRow({ p, now, onCancel }) {
         {p.status === 'confirmed' && (p.cancellable ? (
           <button className="btn btn-ghost btn-sm" onClick={() => onCancel(p)}>Annuler</button>
         ) : (
-          <span className="no-cancel">Annulation impossible à moins de {CANCELLATION_CUTOFF_HOURS} h du début</span>
+          <span className="no-cancel">Annulation impossible à moins de {META.cancellationCutoffHours} h du début</span>
         ))}
         {(p.status === 'completed' || p.status.startsWith('cancelled')) && (
           <Link className="btn btn-ghost btn-sm" to={`/venues/${b.venueId}?area=${b.areaId}`}>Réserver à nouveau</Link>

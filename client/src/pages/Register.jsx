@@ -16,7 +16,7 @@ export default function Register() {
     e.preventDefault();
     setError('');
     try {
-      const user = await register({ ...form, phone: form.phone || undefined });
+      const user = await register({ ...form, email: form.email || undefined });
       // A player who was sent here from a "Réserver" button goes back to where they were heading.
       const from = user.role === 'client' ? location.state?.from : null;
       navigate(from ?? homeFor(user.role), { replace: true });
@@ -37,8 +37,8 @@ export default function Register() {
         </button>
       </div>
       <label>Nom<input value={form.name} onChange={set('name')} required minLength={2} autoComplete="name" /></label>
-      <label>E-mail<input type="email" value={form.email} onChange={set('email')} required autoComplete="email" /></label>
-      <label>Téléphone (facultatif)<input type="tel" value={form.phone} onChange={set('phone')} placeholder="+221 77 000 00 00" autoComplete="tel" /></label>
+      <label>Téléphone<input type="tel" value={form.phone} onChange={set('phone')} required placeholder="77 123 45 67" autoComplete="tel" /></label>
+      <label>E-mail (facultatif)<input type="email" value={form.email} onChange={set('email')} autoComplete="email" /></label>
       <label>Mot de passe (8 caractères minimum)<input type="password" value={form.password} onChange={set('password')} required minLength={8} autoComplete="new-password" /></label>
       {error && <p className="error">{error}</p>}
       <button type="submit" className="btn btn-primary btn-lg" style={{ width: '100%' }}>S’inscrire</button>

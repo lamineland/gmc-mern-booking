@@ -22,7 +22,7 @@ export function AuthProvider({ children }) {
   const value = {
     user,
     ready,
-    login: async (email, password) => startSession(await api('/auth/login', { method: 'POST', body: { email, password } })),
+    login: async (identifier, password) => startSession(await api('/auth/login', { method: 'POST', body: { identifier, password } })),
     register: async (data) => startSession(await api('/auth/register', { method: 'POST', body: data })),
     logout: async () => {
       await api('/auth/logout', { method: 'POST' }).catch(() => {});

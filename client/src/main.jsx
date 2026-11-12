@@ -4,6 +4,9 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App.jsx';
 import { AuthProvider } from './auth/AuthContext.jsx';
 import './index.css';
+import { loadMeta } from './data/venues.js';
+
+loadMeta().catch(() => {}); // size limits, hold time, cancellation rule (defaults until it answers)
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

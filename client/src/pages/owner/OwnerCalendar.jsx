@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Icon } from '../../components/icons.jsx';
 import {
-  cancelEvent, createBlock, createManualBooking, deleteBlock, fetchDay, fetchOwnerVenues, freeStarts, markNoShow, quoteManual,
+  cancelEvent, createBlock, createManualBooking, deleteBlock, fetchDay, fetchFreeStarts, fetchOwnerVenues, markNoShow, quoteManual,
 } from '../../data/owner.js';
 import { WALLETS } from '../../data/payments.js';
 import { fmtMin, isoOf, sizeOf } from '../../data/venues.js';
@@ -132,7 +132,12 @@ function EventDetails({ e, area, onCancel, onNoShow, onDeleteBlock, busy, error 
 function ManualForm({ venue, iso, initial, onDone }) {
   const [areaId, setAreaId] = useState(initial.areaId);
   const area = venue.areas.find((a) => a.id === areaId);
-  const starts = useMemo(() => freeStarts(venue, area, iso), [venue, area, iso]);
+  const [starts, setStarts] = useState([]);
+  useEffect(() => {
+    let live = true;
+    fetchFreeStarts(area.id, iso).then((list) => live && setStarts(list)).catch(() => live && setStarts([]));
+    return () => { live = false; };
+  }, [area.id, iso]);
   const [startMin, setStartMin] = useState(initial.startMin);
   const [count, setCount] = useState(Math.max(area.minSlots, 2));
   const [form, setForm] = useState({ clientName: '', phone: '', note: '' });
@@ -260,8 +265,12 @@ export default function OwnerCalendar() {
   const venueId = params.get('venue') ?? venues?.[0]?.id;
   const setQuery = (patch) => setParams({ ...Object.fromEntries(params), ...patch }, { replace: true });
 
-  useEffect(() => { fetchOwnerVenues().then(setVenues); }, []);
-  const reload = useCallback(() => venueId && fetchDay(venueId, iso).then(setDay), [venueId, iso]);
+  const [loadError, setLoadError] = useState('');
+  useEffect(() => { fetchOwnerVenues().then(setVenues).catch((e) => setLoadError(e.message)); }, []);
+  const reload = useCallback(
+    () => venueId && fetchDay(venueId, iso).then((d) => { setDay(d); setLoadError(''); }).catch((e) => setLoadError(e.message)),
+    [venueId, iso],
+  );
   useEffect(() => { reload(); }, [reload]);
   useEffect(() => {
     const t = setInterval(() => { setNow(new Date()); reload(); }, 30000); // new online bookings show up on their own
@@ -283,6 +292,10 @@ export default function OwnerCalendar() {
     }
   };
 
+  if (loadError && !day) return <div className="empty"><h3>Impossible de charger le calendrier</h3><p className="muted">{loadError}</p></div>;
+  if (venues && venues.length === 0) {
+    return <div className="empty"><h3>Aucun complexe pour l’instant</h3><p className="muted">Ton complexe apparaîtra ici une fois créé et validé.</p></div>;
+  }
   if (!venues || !day || day.venue.id !== venueId) return <div className="venue-skeleton" />;
 
   const { venue, dayStart, dayEnd, events, stats } = day;

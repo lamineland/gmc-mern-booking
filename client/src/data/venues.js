@@ -1,20 +1,32 @@
 /**
- * Venue data access for the new screens. Today it reads mock data and computes slots and
- * prices in the browser, following PRD v2.1 §5.2–5.3. When the backend rewrite lands, the
- * three `fetch*` functions switch to `/venues`, `/venues/:id` and `/areas/:id/availability`
- * and the pages stay the same.
+ * Venue data for the player screens, from the API (PRD v2.2 §8 "Public"). API objects are
+ * normalised to the shapes the screens use: `id`, and areas with `length`/`width` in metres.
+ * The pricing and size helpers mirror server/src/domain (the server stays the source of truth
+ * for prices; these only drive previews and labels).
  */
-import { SPORTS, VENUES } from './mockVenues.js';
-import { KEYS, readJSON } from './store.js';
+import { api } from '../api.js';
 
-export { SPORTS };
-export { AMENITIES } from './mockVenues.js';
+export const SPORTS = {
+  football: { label: 'Football', short: 'Foot' },
+  futsal: { label: 'Futsal', short: 'Futsal' },
+  basketball: { label: 'Basketball', short: 'Basket' },
+  padel: { label: 'Padel', short: 'Padel' },
+};
+
+export const AMENITIES = {
+  vestiaires: 'Vestiaires',
+  douches: 'Douches',
+  parking: 'Parking',
+  buvette: 'Buvette',
+  wifi: 'Wi-Fi',
+  location: 'Location de ballons',
+};
+
 export const CITIES = ['Dakar', 'Thiès', 'Saly'];
 
 /**
- * Size categories per sport, picked from the area's surface (length × width, in m²).
- * Each category is the first whose `maxM2` is above the surface. The venue sets one price
- * list per sport + category, so a bigger area costs more without pricing each area by hand.
+ * Size categories per sport. Limits come from the server (`GET /meta`, admin-editable) and are
+ * merged in by loadMeta(); the hints are UI copy.
  */
 export const SIZES = {
   football: [
@@ -33,17 +45,41 @@ export const SIZES = {
   padel: [{ key: 'standard', label: 'Standard', maxM2: Infinity, hint: '20 × 10 m' }],
 };
 
+/** Platform settings the screens show (hold time, cancellation rule). Updated by loadMeta(). */
+export const META = { holdMinutes: 10, cancellationCutoffHours: 2, paymentMethods: ['wave', 'orange_money', 'free_money'] };
+
+let metaPromise = null;
+export function loadMeta() {
+  metaPromise ??= api('/meta')
+    .then((m) => {
+      Object.assign(META, { holdMinutes: m.holdMinutes, cancellationCutoffHours: m.cancellationCutoffHours, paymentMethods: m.paymentMethods });
+      for (const [sport, list] of Object.entries(m.sizeCategories ?? {})) {
+        const hints = Object.fromEntries((SIZES[sport] ?? []).map((s) => [s.key, s.hint]));
+        SIZES[sport] = list.map((s) => ({ ...s, maxM2: s.maxM2 ?? Infinity, hint: hints[s.key] ?? '' }));
+      }
+      return META;
+    })
+    .catch((err) => {
+      metaPromise = null;
+      throw err;
+    });
+  return metaPromise;
+}
+
 export const surfaceOf = (area) => area.length * area.width;
-export const sizeOf = (area) => SIZES[area.sport].find((s) => surfaceOf(area) < s.maxM2);
-export const dimsLabel = (area) => `${area.length} × ${area.width} m · ${new Intl.NumberFormat('fr-FR').format(surfaceOf(area)).replace(/\u202f|\u00a0/g, ' ')} m²`;
+/** Size category from the dimensions, so editing dimensions updates the badge right away. */
+export const sizeOf = (area) => {
+  const list = SIZES[area.sport] ?? [{ key: 'standard', label: 'Standard', maxM2: Infinity, hint: '' }];
+  return list.find((s) => surfaceOf(area) < s.maxM2) ?? list[list.length - 1];
+};
+const nf = (n) => new Intl.NumberFormat('fr-FR').format(n).replace(/ | /g, ' ');
+export const dimsLabel = (area) => `${area.length} × ${area.width} m · ${nf(surfaceOf(area))} m²`;
 
 /** Price list for an area: its own override, else the venue's list for its sport + size. */
 export function pricingOf(venue, area) {
   if (area.pricing) return area.pricing;
   const size = sizeOf(area).key;
-  const p = venue.pricing.find((x) => x.sport === area.sport && x.size === size);
-  if (!p) throw new Error(`No price for ${area.sport}/${size} at ${venue.id}`);
-  return p;
+  return venue.pricing?.find((x) => x.sport === area.sport && x.size === size) ?? area.priceList ?? null;
 }
 
 export const toMin = (hhmm) => {
@@ -73,71 +109,25 @@ export function nextDays(n = 7, from = new Date()) {
   });
 }
 
+/** "jeudi 12 novembre" for any ISO date. */
+export const longDate = (iso) => parseIso(iso).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+
+/** Local date and time of an instant in a venue's timezone: { date: 'YYYY-MM-DD', time: 'HH:MM' }. */
+export function localDateTime(isoInstant, timeZone = 'Africa/Dakar') {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+      .formatToParts(new Date(isoInstant))
+      .map((p) => [p.type, p.value]),
+  );
+  return { date: `${parts.year}-${parts.month}-${parts.day}`, time: `${parts.hour}:${parts.minute}` };
+}
+
 /** Price of the slot starting at `minute` on weekday `day`: narrowest matching rule, else base price. */
 export function slotPrice(pricing, day, minute) {
+  const span = (r) => toMin(r.to) - toMin(r.from);
   const matches = pricing.priceRules.filter((r) => r.days.includes(day) && toMin(r.from) <= minute && minute < toMin(r.to));
   if (!matches.length) return pricing.basePrice;
-  return matches.sort((a, b) => toMin(a.to) - toMin(a.from) - (toMin(b.to) - toMin(b.from)))[0].price;
-}
-
-/** Stable pseudo-random number in [0, 1) so mock bookings don't move between renders. */
-export function noise(key) {
-  let h = 2166136261;
-  for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 16777619);
-  return ((h >>> 0) % 1000) / 1000;
-}
-
-/** Background demand: generated bookings by whole hour, like real ones. The owner can cancel them. */
-export function genTaken(area, iso, hour, cancelled = genCancelled()) {
-  const day = weekdayOf(iso);
-  const weekend = day === 0 || day === 6;
-  const p = hour >= 18 && hour < 22 ? 0.5 : weekend && hour >= 10 ? 0.35 : 0.12;
-  return noise(`${area.id}|${iso}|${hour}`) < p && !cancelled.has(`${area.id}|${iso}|${hour}`);
-}
-const genCancelled = () => new Set(readJSON(KEYS.owner, {}).cancelledGen ?? []);
-
-/**
- * Time ranges [startMin, endMin) taken on an area by real activity: player bookings (paid, or
- * still inside their 10-min payment hold), owner manual bookings and owner time blocks.
- */
-export function busyRanges(venue, area, iso, now = Date.now()) {
-  const ranges = [];
-  for (const p of Object.values(readJSON(KEYS.payments, {}))) {
-    const b = p?.booking;
-    if (!b || b.areaId !== area.id || b.date !== iso) continue;
-    const live = p.status === 'succeeded' || p.status === 'no_show'
-      || ((p.status === 'pending' || p.status === 'failed') && now < p.holdExpiresAt);
-    if (live) ranges.push([toMin(b.start), toMin(b.start) + b.slotCount * area.slotMinutes]);
-  }
-  const owner = readJSON(KEYS.owner, {});
-  for (const m of owner.manual ?? []) {
-    if (m.areaId === area.id && m.date === iso && (m.status === 'confirmed' || m.status === 'no_show')) ranges.push([m.startMin, m.endMin]);
-  }
-  for (const bl of owner.blocks ?? []) {
-    if (bl.venueId === venue.id && bl.date === iso && (!bl.areaId || bl.areaId === area.id)) ranges.push([bl.startMin, bl.endMin]);
-  }
-  return ranges;
-}
-
-/** Every slot of an area on a date: { start, end, time, price, peak, state: free | taken | past }. */
-export function areaDay(venue, area, iso, now = new Date()) {
-  const day = weekdayOf(iso);
-  const intervals = venue.openingHours.find((h) => h.day === day)?.intervals ?? [];
-  const today = isoOf(now);
-  const nowMin = iso < today ? Infinity : iso === today ? now.getHours() * 60 + now.getMinutes() : -1;
-  const pricing = pricingOf(venue, area);
-  const busy = busyRanges(venue, area, iso, now.getTime());
-  const cancelled = genCancelled();
-  const slots = [];
-  for (const { open, close } of intervals) {
-    for (let m = toMin(open); m + area.slotMinutes <= toMin(close); m += area.slotMinutes) {
-      const price = slotPrice(pricing, day, m);
-      const taken = genTaken(area, iso, Math.floor(m / 60), cancelled) || busy.some(([a, b]) => a < m + area.slotMinutes && b > m);
-      const state = m <= nowMin ? 'past' : taken ? 'taken' : 'free';
-      slots.push({ start: m, end: m + area.slotMinutes, time: fmtMin(m), price, peak: price > pricing.basePrice, state });
-    }
-  }
-  return slots;
+  return matches.sort((a, b) => span(a) - span(b))[0].price;
 }
 
 /** Can a booking of `count` slots start at index `i`? (all free and back to back) */
@@ -151,42 +141,43 @@ export function runIsFree(slots, i, count) {
 }
 
 export const venueSports = (venue) => [...new Set(venue.areas.map((a) => a.sport))];
-const minPrice = (venue, areas) => Math.min(...areas.map((a) => pricingOf(venue, a).basePrice));
 
-const delay = (value) => new Promise((resolve) => setTimeout(() => resolve(value), 120));
+/** API area → screen area. */
+export const normalizeArea = (a) => ({
+  ...a,
+  id: a._id,
+  length: a.lengthM,
+  width: a.widthM,
+  pricing: a.priceList?.custom ? { basePrice: a.priceList.basePrice, priceRules: a.priceList.priceRules } : null,
+});
+/** API venue (+ areas) → screen venue. */
+export const normalizeVenue = (v, areas = []) => ({ ...v, id: v._id, areas: areas.map(normalizeArea) });
 
-/**
- * Search (PRD P1). `time` (HH:MM) and `duration` (minutes) are optional; without `time`,
- * the next free start times of the day are returned.
- */
-export function fetchVenues({ city, district, sport, size, date, time, duration } = {}) {
-  const items = [];
-  for (const venue of VENUES) {
-    if (city && venue.city !== city) continue;
-    if (district && venue.district !== district) continue;
-    const areas = venue.areas.filter((a) => a.active && (!sport || a.sport === sport) && (!size || sizeOf(a).key === size));
-    if (!areas.length) continue;
+const qs = (params) => new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== '' && v !== 0)).toString();
 
-    const starts = new Map(); // time -> first area free then
-    for (const a of areas) {
-      const slots = areaDay(venue, a, date);
-      const count = Math.max(a.minSlots, duration ? Math.ceil(duration / a.slotMinutes) : 0);
-      if (count > a.maxSlots) continue;
-      slots.forEach((s, i) => {
-        if (time && s.start < toMin(time)) return;
-        if (!starts.has(s.time) && runIsFree(slots, i, count)) starts.set(s.time, a.id);
-      });
-    }
-    const free = [...starts.entries()].sort(([x], [y]) => toMin(x) - toMin(y)).map(([t, areaId]) => ({ time: t, areaId }));
-    if (time && free[0]?.time !== time) continue; // must be free at the requested time
-    items.push({ venue, areas, sports: venueSports(venue), fromPrice: minPrice(venue, areas), nextFree: free.slice(0, 4), freeCount: free.length });
-  }
-  return delay(items);
+/** Search (PRD P1): GET /venues. */
+export async function fetchVenues({ city, district, sport, size, date, time, duration } = {}) {
+  const res = await api(`/venues?${qs({ city, district, sport, size, date, time, duration, limit: 50 })}`);
+  return res.items.map((it) => ({ ...it, venue: normalizeVenue(it.venue, it.areas), areas: it.areas.map(normalizeArea) }));
 }
 
-export function fetchVenue(id) {
-  const venue = VENUES.find((v) => v.id === id);
-  return venue ? delay(venue) : Promise.reject(new Error('Complexe introuvable'));
+export async function fetchVenue(id) {
+  const res = await api(`/venues/${id}`);
+  return normalizeVenue(res.venue, res.areas);
 }
 
-export const districtsOf = (city) => [...new Set(VENUES.filter((v) => !city || v.city === city).map((v) => v.district))].sort();
+/** Slot grid of one area on one date: [{ start, end, time, price, peak, state }] in local minutes. */
+export async function fetchAreaDay(areaId, date) {
+  const res = await api(`/areas/${areaId}/availability?date=${date}`);
+  return res.slots.map((s) => ({ start: toMin(s.start), end: toMin(s.end), time: s.start, price: s.price, peak: s.peak, state: s.state }));
+}
+
+/** Districts per city, for the search filter. */
+let districtsPromise = null;
+export function fetchDistricts() {
+  districtsPromise ??= api('/venues/districts').then((r) => r.items).catch((err) => {
+    districtsPromise = null;
+    throw err;
+  });
+  return districtsPromise;
+}

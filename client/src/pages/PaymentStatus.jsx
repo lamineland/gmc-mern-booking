@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Icon } from '../components/icons.jsx';
-import { WALLETS, getPayment, retry, simulate } from '../data/payments.js';
-import { nextDays } from '../data/venues.js';
+import { WALLETS, getPayment, isMockRedirect, retry, simulate } from '../data/payments.js';
+import { META, longDate } from '../data/venues.js';
 import { formatFCFA } from '../format.js';
 import { Steps, WalletLogo } from './Checkout.jsx';
 
@@ -80,7 +80,8 @@ export default function PaymentStatus() {
     refresh();
   };
   const tryAgain = async () => {
-    await retry(ref, { method, phone: p.phone });
+    const { redirectUrl } = await retry(ref, { method, phone: p.phone });
+    if (redirectUrl && !isMockRedirect(redirectUrl)) return window.location.assign(redirectUrl);
     setChanging(false);
     refresh();
   };
@@ -96,7 +97,7 @@ export default function PaymentStatus() {
   if (!p) return <div className="venue-skeleton" />;
 
   const b = p.booking;
-  const day = nextDays(14).find((d) => d.iso === b.date)?.long ?? b.date;
+  const day = longDate(b.date);
   const left = p.holdExpiresAt - now;
   const venueLink = `/venues/${b.venueId}?area=${b.areaId}&date=${b.date}`;
   const share = encodeURIComponent(
@@ -114,7 +115,7 @@ export default function PaymentStatus() {
           <p className="lead">{WALLETS[p.method].pending} <strong>{formatFCFA(b.payNow)}</strong> au numéro {p.phone}.</p>
           <div className="hold-timer" role="timer" aria-live="off">
             <Icon name="clock" size={18} /> Créneau bloqué pour toi encore <strong>{mmss(left)}</strong>
-            <span className="hold-bar"><span style={{ width: `${Math.max(0, Math.min(100, (left / 600000) * 100))}%` }} /></span>
+            <span className="hold-bar"><span style={{ width: `${Math.max(0, Math.min(100, (left / (META.holdMinutes * 60000)) * 100))}%` }} /></span>
           </div>
           <p className="waiting"><span className="dot-pulse" /> En attente de la confirmation de {WALLETS[p.method].label}…</p>
           <div className="status-actions">
@@ -175,6 +176,15 @@ export default function PaymentStatus() {
         </section>
       )}
 
+      {p.status.startsWith('cancelled') && (
+        <section className="status-card is-failed">
+          <div className="status-icon ko"><Icon name="close" size={34} /></div>
+          <h1>Cette réservation a été annulée</h1>
+          <p className="lead">{p.cancelReason ?? 'Annulée.'}{p.refund && ` ${formatFCFA(p.refund.amount)} remboursés.`}</p>
+          <div className="status-actions"><Link className="btn btn-primary" to="/bookings">Mes réservations</Link></div>
+        </section>
+      )}
+
       {p.status !== 'succeeded' && (
         <aside className="status-summary">
           <span className="muted">{b.venueName} · {b.areaName}</span>
@@ -191,9 +201,8 @@ export default function PaymentStatus() {
           <div className="test-actions">
             <button className="btn btn-sm btn-primary" onClick={() => act('success')}>Payer</button>
             <button className="btn btn-sm btn-ghost" onClick={() => act('fail')}>Échec</button>
-            <button className="btn btn-sm btn-ghost" onClick={() => act('expire')}>Délai dépassé</button>
           </div>
-          <p className="muted">Numéros de test : finissant par 00 = payé après 3 s, 01 = refusé, 02 = pas de réponse.</p>
+          <p className="muted">Numéros de test : finissant par 00 = payé après 3 s, 01 = refusé, 02 = pas de réponse (le créneau se libère après {META.holdMinutes} min).</p>
         </section>
       )}
     </div>

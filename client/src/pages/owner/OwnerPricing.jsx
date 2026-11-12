@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Icon } from '../../components/icons.jsx';
 import {
-  draftArea, fetchOwnerVenues, pricingDraft, pricingErrors, pricingWarnings, saveVenuePricing,
+  draftArea, fetchOwnerVenue, fetchOwnerVenues, pricingDraft, pricingErrors, pricingWarnings, saveVenuePricing,
 } from '../../data/owner.js';
 import { SIZES, SPORTS, fmtMin, sizeOf, slotPrice, surfaceOf, toMin } from '../../data/venues.js';
 import { formatFCFA } from '../../format.js';
@@ -129,8 +129,14 @@ export default function OwnerPricing() {
   const [flash, setFlash] = useState('');
   const [saveError, setSaveError] = useState('');
 
-  useEffect(() => { fetchOwnerVenues().then(setVenues); }, []);
-  const venue = venues?.find((v) => v.id === params.get('venue')) ?? venues?.[0];
+  const [venue, setVenue] = useState(null);
+  const [loadError, setLoadError] = useState('');
+  useEffect(() => { fetchOwnerVenues().then(setVenues).catch((e) => setLoadError(e.message)); }, []);
+  const selectedId = params.get('venue') ?? venues?.[0]?.id;
+  useEffect(() => {
+    if (!selectedId) return;
+    fetchOwnerVenue(selectedId).then(setVenue).catch((e) => setLoadError(e.message));
+  }, [selectedId]);
   useEffect(() => {
     if (!venue) return;
     const d = pricingDraft(venue);
@@ -143,7 +149,9 @@ export default function OwnerPricing() {
   const fresh = venue && draft && draft.areas.every((a) => venue.areas.some((x) => x.id === a.id));
   const errors = useMemo(() => (fresh ? pricingErrors(venue, draft) : []), [fresh, venue, draft]);
   const warnings = useMemo(() => (fresh ? pricingWarnings(draft) : []), [fresh, draft]);
-  if (!fresh) return <div className="venue-skeleton" />;
+  if (loadError) return <div className="empty"><h3>Impossible de charger les tarifs</h3><p className="muted">{loadError}</p></div>;
+  if (venues && venues.length === 0) return <div className="empty"><h3>Aucun complexe pour l’instant</h3></div>;
+  if (!fresh || venue.id !== selectedId) return <div className="venue-skeleton" />;
 
   const dirty = JSON.stringify(draft) !== saved;
   const areas = draft.areas.map((a) => draftArea(venue, draft, a.id));
@@ -179,6 +187,7 @@ export default function OwnerPricing() {
       const clean = await saveVenuePricing(venue.id, draft);
       setDraft(clean);
       setSaved(JSON.stringify(clean));
+      setVenue(await fetchOwnerVenue(venue.id)); // sizes and lists exactly as the server saved them
       setFlash('Tarifs enregistrés. Ils s’appliquent aux nouvelles réservations ; celles déjà faites gardent leur prix.');
     } catch (e) {
       setSaveError(e.message);

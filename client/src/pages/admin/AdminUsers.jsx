@@ -70,7 +70,7 @@ export default function AdminUsers() {
             {data?.items.map((u) => (
               <tr key={u._id}>
                 <td>{u.name}</td>
-                <td>{u.email}</td>
+                <td>{u.phone}{u.email ? ` · ${u.email}` : ''}</td>
                 <td>{u.role}</td>
                 <td><span className={`badge ${u.status}`}>{STATUS_LABELS[u.status]}</span></td>
                 <td style={{ whiteSpace: 'nowrap' }}>
@@ -84,7 +84,7 @@ export default function AdminUsers() {
                       <button
                         className="link"
                         style={{ color: 'var(--danger)', marginLeft: '0.75rem' }}
-                        onClick={() => window.confirm(`Delete ${u.email}? This cannot be undone.`) && act(() => api(`/admin/users/${u._id}`, { method: 'DELETE' }))}
+                        onClick={() => window.confirm(`Delete ${u.email ?? u.phone}? This cannot be undone.`) && act(() => api(`/admin/users/${u._id}`, { method: 'DELETE' }))}
                       >
                         Delete
                       </button>
