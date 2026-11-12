@@ -1,3 +1,6 @@
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -32,6 +35,14 @@ app.use('/api/v1/images', imageRoutes);
 app.use('/api/v1/webhooks', webhookRoutes);
 if (!config.isProd) app.use('/api/v1/mock-pay', (await import('./routes/mockPay.js')).default);
 app.use('/api/v1', publicRoutes);
+
+// In production the built web app (client/dist) is served by this same server, so the
+// browser calls /api/v1 on its own origin, as the Vite proxy does in development.
+const clientDist = fileURLToPath(new URL('../../client/dist', import.meta.url));
+if (existsSync(clientDist)) {
+  app.use(express.static(clientDist, { index: false, maxAge: '1h' }));
+  app.get(/^(?!\/api\/).*/, (req, res) => res.sendFile(path.join(clientDist, 'index.html')));
+}
 
 app.use(notFoundHandler);
 app.use(errorHandler);
